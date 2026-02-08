@@ -1,32 +1,81 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styles from "./SearchHero.module.css";
 
 const popularTags = ["Nature", "Ocean", "City", "Mountains", "Sky"];
 
 export default function SearchHero({ onResults }) {
   const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
   const API_KEY = import.meta.env.VITE_PEXELS_API_KEY;
 
+  const abortRef = useRef(null);
+  const debounceRef = useRef(null);
+
   const searchPhotos = async (q) => {
-    console.log("API_KEY exists?", !!API_KEY, "Query:", q);
+    const trimmed = q.trim();
+    if (!trimmed) return;
 
-    const res = await fetch(
-      `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=12`,
-      { headers: { Authorization: API_KEY } }
-    );
+    // cancel previous request (important for fast typing)
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
 
-    console.log("Status:", res.status);
-    const data = await res.json();
-    console.log("Photos:", data?.photos?.length);
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `https://api.pexels.com/v1/search?query=${encodeURIComponent(trimmed)}&per_page=12`,
+        {
+          headers: { Authorization: API_KEY },
+          signal: abortRef.current.signal,
+        }
+      );
 
-    onResults?.(data.photos || []);
+      const data = await res.json();
+      onResults?.(data.photos || []);
+    } catch (err) {
+      // ignore abort errors
+      if (err?.name !== "AbortError") {
+        console.error(err);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const resetAll = () => {
+    setQuery("");
+    if (abortRef.current) abortRef.current.abort();
+    onResults?.([]); // يرجّع الصفحة “من الأول” (حسب ما بتعرضه لما النتايج تبقى فاضية)
+  };
+
+  // Auto search on typing (debounced)
+  useEffect(() => {
+    if (!API_KEY) return;
+
+    const q = query.trim();
+
+    // لو فاضي، رجّعها من الأول
+    if (!q) {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (abortRef.current) abortRef.current.abort();
+      onResults?.([]);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      searchPhotos(q);
+    }, 350);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, API_KEY]);
 
   const onSubmit = (e) => {
     e.preventDefault();
-    const q = query.trim();
-    if (!q) return;
-    searchPhotos(q);
+    // submit still works (اختياري) — هيعمل search فوري
+    searchPhotos(query);
   };
 
   return (
@@ -57,8 +106,18 @@ export default function SearchHero({ onResults }) {
             onChange={(e) => setQuery(e.target.value)}
           />
 
-          <button className={styles.button} type="submit">
-            Search
+          <button className={styles.button} type="submit" disabled={loading}>
+            {loading ? "Searching..." : "Search"}
+          </button>
+
+          <button
+            className={styles.resetButton}
+            type="button"
+            onClick={resetAll}
+            disabled={!query && !loading}
+            aria-label="Reset search"
+          >
+            Reset
           </button>
         </form>
 
@@ -72,8 +131,7 @@ export default function SearchHero({ onResults }) {
                 type="button"
                 className={styles.pill}
                 onClick={() => {
-                  setQuery(tag);
-                  searchPhotos(tag);
+                  setQuery(tag); 
                 }}
               >
                 {tag}
