@@ -44,16 +44,14 @@ export default function SearchHero({ onResults }) {
   const resetAll = () => {
     setQuery("");
     if (abortRef.current) abortRef.current.abort();
-    onResults?.([]); // يرجّع الصفحة “من الأول” (حسب ما بتعرضه لما النتايج تبقى فاضية)
+    onResults?.([]);
   };
 
-  // Auto search on typing (debounced)
   useEffect(() => {
     if (!API_KEY) return;
 
     const q = query.trim();
 
-    // لو فاضي، رجّعها من الأول
     if (!q) {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (abortRef.current) abortRef.current.abort();
@@ -69,12 +67,10 @@ export default function SearchHero({ onResults }) {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, API_KEY]);
 
   const onSubmit = (e) => {
     e.preventDefault();
-    // submit still works (اختياري) — هيعمل search فوري
     searchPhotos(query);
   };
 
